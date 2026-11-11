@@ -6,6 +6,7 @@ const time=t=>new Date(t).toLocaleString([],{month:'short',day:'numeric',hour:'n
 const badge=s=>`<span class="badge ${s}">${labels[s]}</span>`;
 function tab(name){document.querySelectorAll('.panel').forEach(p=>p.hidden=p.id!==name);document.querySelectorAll('.tab').forEach(t=>{t.classList.toggle('active',t.dataset.tab===name);t.setAttribute('aria-current',t.dataset.tab===name?'page':'false');});if(name==='passage')requestAnimationFrame(()=>{initMap();routeMap?.invalidateSize();});}
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>tab(b.dataset.tab));$('#go-passage').onclick=()=>tab('passage');
+$('#back-to-passage').onclick=()=>{tab('passage');$('#passage').scrollIntoView({behavior:'smooth',block:'start'});};
 $('#timezone').textContent=Intl.DateTimeFormat().resolvedOptions().timeZone;
 function status(id,message,error=false){const e=$(id);e.textContent=message;e.classList.toggle('error',error);}
 async function api(path,options){const r=await fetch(path,options);const d=await r.json();if(!r.ok)throw new Error(d.error||'Request failed.');return d;}
@@ -29,7 +30,32 @@ async function loadLocation(point,name){
     status('#local-status',d.errors.length?'Some forecast data is unavailable.':'Updated.');
   }catch(e){if(request===localRequest)status('#local-status',e.message,true);}
 }
-$('#search-form').onsubmit=async e=>{e.preventDefault();const target=$('#search-results');target.textContent='Searching…';try{const d=await api(`/api/search?q=${encodeURIComponent($('#search').value)}`);target.innerHTML='';if(!d.results?.length){target.textContent='No places found. Try a nearby town or enter coordinates.';return;}d.results.forEach(p=>{const b=document.createElement('button');b.type='button';b.className='result-location';const name=[p.name,p.admin1,p.country].filter(Boolean).join(', ');b.textContent=name;b.onclick=()=>{target.innerHTML='';loadLocation({lat:p.latitude,lon:p.longitude},name);};target.append(b);});}catch(e){target.textContent=e.message;}};
+function locationSuggestions(input,target,onSelect){
+ let timer,sequence=0,controller=null,items=[],active=-1;
+ input.autocomplete='off';input.setAttribute('role','combobox');input.setAttribute('aria-autocomplete','list');input.setAttribute('aria-controls',target.id);input.setAttribute('aria-expanded','false');
+ target.classList.add('location-dropdown');target.setAttribute('role','listbox');target.setAttribute('aria-label','Location suggestions');target.hidden=true;
+ function close(){clearTimeout(timer);sequence++;controller?.abort();target.hidden=true;input.setAttribute('aria-expanded','false');input.removeAttribute('aria-activedescendant');active=-1;}
+ function highlight(index){active=index;const options=target.querySelectorAll('[role="option"]');options.forEach((o,i)=>{o.setAttribute('aria-selected',String(i===active));o.classList.toggle('highlighted',i===active);});if(options[active]){input.setAttribute('aria-activedescendant',options[active].id);options[active].scrollIntoView({block:'nearest'});}else input.removeAttribute('aria-activedescendant');}
+ function select(p){close();input.value=p.name;onSelect(p);}
+ async function search(){
+  clearTimeout(timer);const query=input.value.trim(),request=++sequence;controller?.abort();items=[];active=-1;input.removeAttribute('aria-activedescendant');
+  if(query.length<2){close();return;}
+  controller=new AbortController();target.textContent='Searching…';target.hidden=false;input.setAttribute('aria-expanded','true');
+  try{const r=await fetch(`/api/search?q=${encodeURIComponent(query)}`,{signal:controller.signal});const d=await r.json();if(request!==sequence)return;if(!r.ok)throw new Error(d.error||'Search unavailable.');items=d.results??[];target.innerHTML='';if(!items.length){target.textContent='No places found. Try a nearby town or enter coordinates.';return;}items.forEach((p,i)=>{const b=document.createElement('button');b.type='button';b.className='result-location';b.id=`${target.id}-option-${i}`;b.setAttribute('role','option');b.setAttribute('aria-selected','false');b.tabIndex=-1;b.textContent=[p.name,p.admin1,p.country].filter(Boolean).join(', ');b.onpointerdown=e=>e.preventDefault();b.onclick=()=>select(p);target.append(b);});}catch(e){if(request!==sequence||e.name==='AbortError')return;target.textContent=e.message;}
+ }
+ input.addEventListener('input',()=>{close();target.innerHTML='';items=[];if(input.value.trim().length>=2)timer=setTimeout(search,300);});
+ input.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){close();return;}
+  if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(target.hidden){search();return;}if(items.length)highlight((active+(e.key==='ArrowDown'?1:-1)+items.length)%items.length);return;}
+  if(e.key==='Enter'){e.preventDefault();if(active>=0&&!target.hidden)select(items[active]);else search();}
+ });
+ input.addEventListener('blur',()=>setTimeout(close,150));
+ document.addEventListener('pointerdown',e=>{if(e.target!==input&&!target.contains(e.target))close();});
+ return {search,close};
+}
+const localSuggestions=locationSuggestions($('#search'),$('#search-results'),p=>loadLocation({lat:p.latitude,lon:p.longitude},[p.name,p.admin1,p.country].filter(Boolean).join(', ')));
+$('#search-form').onsubmit=e=>{e.preventDefault();localSuggestions.search();};
+
 $('#coordinate-form').onsubmit=e=>{e.preventDefault();const f=e.currentTarget;loadLocation({lat:Number(f.elements.lat.value),lon:Number(f.elements.lon.value)},'Selected coordinates');};
 $('#locate').onclick=()=>{if(!navigator.geolocation){status('#local-status','Location is unavailable. Search or enter coordinates.',true);return;}status('#local-status','Waiting for location permission…');navigator.geolocation.getCurrentPosition(p=>loadLocation({lat:p.coords.latitude,lon:p.coords.longitude},'Your current location'),e=>status('#local-status',`${e.message} Search or enter coordinates instead.`,true),{timeout:15000,maximumAge:300000});};
 const form=$('#passage-form');
@@ -111,10 +137,9 @@ $('#add-waypoint').onclick=()=>{initMap();setAdding(!addingWaypoint);};$('#fit-r
 $('#undo-route').onclick=()=>{if(!routeHistory.length)return;routePoints=JSON.parse(routeHistory.pop());routeChanged();fitRoute();};
 $('#clear-route').onclick=()=>{snapshotRoute();routePoints=[];$('#route-from').value='';$('#route-to').value='';routeChanged();};
 function choosePlace(kind,p){snapshotRoute();const point={lat:p.latitude,lon:p.longitude,name:p.name};if(kind==='from'){if(routePoints.length)routePoints[0]=point;else routePoints.push(point);}else{if(!routePoints.length){status('#passage-status','Choose a departure first.',true);return;}if(routePoints.length===1)routePoints.push(point);else routePoints[routePoints.length-1]=point;}routeChanged();initMap();fitRoute();}
-let searchSequence={from:0,to:0};
-async function searchRoute(kind){const seq=++searchSequence[kind],input=$(`#route-${kind}`),target=$(`#${kind}-results`);if(input.value.trim().length<2){target.textContent='Enter at least two characters.';return;}target.textContent='Searching…';try{const d=await api(`/api/search?q=${encodeURIComponent(input.value.trim())}`);if(seq!==searchSequence[kind])return;target.innerHTML='';if(!d.results?.length){target.textContent='No results. Try a nearby town, choose on the map, or enter coordinates.';return;}d.results.forEach(p=>{const b=document.createElement('button');b.type='button';b.className='result-location';b.textContent=[p.name,p.admin1,p.country].filter(Boolean).join(', ');b.onclick=()=>{input.value=p.name;target.innerHTML='';choosePlace(kind,p);};target.append(b);});}catch(e){target.textContent=e.message;}}
-document.querySelectorAll('[data-search]').forEach(b=>b.onclick=()=>searchRoute(b.dataset.search));
-for(const kind of ['from','to'])$(`#route-${kind}`).onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();searchRoute(kind);}};
+const routeSuggestions={};
+for(const kind of ['from','to'])routeSuggestions[kind]=locationSuggestions($(`#route-${kind}`),$(`#${kind}-results`),p=>choosePlace(kind,p));
+document.querySelectorAll('[data-search]').forEach(b=>b.onclick=()=>routeSuggestions[b.dataset.search].search());
 $('#use-saved-location').onclick=()=>{const loc=read('boatbot-location');if(!loc){status('#passage-status','Select a location in Today aboard first.',true);return;}choosePlace('from',{latitude:loc.point.lat,longitude:loc.point.lon,name:loc.name});$('#route-from').value=loc.name;};
 $('#apply-coordinates').onclick=()=>{try{const next=form.elements.points.value.trim().split('\n').map(l=>{const parts=l.split(',').map(s=>s.trim());if(parts.length!==2||parts.some(x=>!x))throw new Error('Use latitude, longitude on each line.');const lat=Number(parts[0]),lon=Number(parts[1]);if(!Number.isFinite(lat)||!Number.isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180)throw new Error('Check the coordinate ranges.');return{lat,lon,name:'Charted point'};});if(next.length<2||next.length>12)throw new Error('Enter 2–12 coordinates.');snapshotRoute();routePoints=next;routeChanged();initMap();fitRoute();}catch(e){status('#passage-status',e.message,true);}};
 function setDepartureMode(mode){departureMode=mode;$('#departure-control').hidden=mode==='next';$('#when-next').classList.toggle('selected',mode==='next');$('#when-date').classList.toggle('selected',mode==='date');$('#when-next').setAttribute('aria-pressed',String(mode==='next'));$('#when-date').setAttribute('aria-pressed',String(mode==='date'));form.elements.departure.required=mode==='date';$('#when-hint').textContent=mode==='next'?'Compare hourly departures over the next 72 hours.':'Compare 72 hourly departures starting at your chosen time.';invalidateResults();}
