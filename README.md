@@ -1,10 +1,10 @@
 # Boat Bot
 
-Personal cruising weather dashboard for a Morgan 454, usable worldwide wherever the underlying forecasts have coverage. Responsive browser UI + a dependency-free Node server.
+Personal cruising weather dashboard for a Morgan 454, usable worldwide wherever the underlying forecasts have coverage. Responsive browser UI + a Node server, with Leaflet for route editing.
 
 ## Run
 
-Requires Node 22 or newer (Docker uses Node 24).
+Requires Node 22 or newer (Docker uses Node 24). Run `npm ci` once to install the pinned Leaflet map dependency.
 
 ```sh
 npm start
@@ -58,3 +58,11 @@ NDBC: https://www.ndbc.noaa.gov/data/latest_obs/latest_obs.txt . Observations wi
 - Public deployment is intended for personal low-volume use. Add authentication and shared-store rate limiting before wider distribution. Current rate limit is per socket IP, so proxies may share it; cache is per server process.
 
 Recommended next work: verify live providers from Railway; add model comparison and forecast-run tracking; add PostgreSQL/login for saved passages; add explicit warning-zone coverage and regional tide adapters; then scheduled rechecks and opt-in notifications.
+
+## Passage planner redesign
+
+The UI is vessel-neutral. Speed, vessel name, and weather preferences are edited in a dialog and stored per browser. Existing settings migrate from the first version. Fresh visitors select a location explicitly; saved locations are labeled.
+
+Search departure/destination place centers, then drag markers onto a chart-verified passage. Add waypoints by clicking the map; inserted points go on the segment with the least added distance. Undo, remove, fit, and manual coordinate editing are available. Review confirmation is reset after route edits. Weather windows show candidate cards and point-by-point conditions.
+
+Maps use Leaflet 1.9.4 (BSD-2-Clause, license in installed package) and visible OpenStreetMap contributor attribution. Standard OSM tiles are loaded on demand with normal browser caching and referrer policy, without offline prefetching. This is a general-purpose map, not a nautical chart. Review OSM tile policy and weather API terms before larger-scale sharing.

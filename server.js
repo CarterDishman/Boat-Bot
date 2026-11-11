@@ -49,13 +49,13 @@ async function buoys(point) {
 async function body(req){let raw='';for await(const c of req){raw+=c;if(raw.length>20000)throw new Error('Request too large.');}return JSON.parse(raw);}
 const clients=new Map();
 function allow(req){const now=Date.now(),key=req.socket.remoteAddress;let r=clients.get(key);if(!r||now-r.at>60000){r={at:now,n:0};clients.set(key,r);}if(clients.size>2000)clients.clear();return ++r.n<=45;}
-const files={'/':'index.html','/app.js':'app.js','/style.css':'style.css'};
+const files={'/':'index.html','/app.js':'app.js','/style.css':'style.css','/leaflet.js':'../node_modules/leaflet/dist/leaflet.js','/leaflet.css':'../node_modules/leaflet/dist/leaflet.css'};
 const server=http.createServer(async(req,res)=>{
   const send=(status,data)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
   try {
     const u=new URL(req.url,'http://localhost');
     res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');
-    res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+    res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: https://tile.openstreetmap.org; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
     if(u.pathname==='/health')return send(200,{ok:true});
     if(u.pathname.startsWith('/api/')&&!allow(req))return send(429,{error:'Too many requests. Wait a minute.'});
     if(u.pathname==='/api/search'&&req.method==='GET') {
@@ -76,7 +76,7 @@ const server=http.createServer(async(req,res)=>{
         const variants=[slow,route.speed,fast].map(s=>evaluate(samples,f.forecasts,departure,s,route));
         const rank={fits:0,marginal:1,incomplete:2,exceeds:3};
         const worst=[...variants].sort((a,b)=>rank[b.status]-rank[a.status])[0];
-        windows.push({...variants[1],status:worst.status,reasons:[...new Set(variants.flatMap(v=>v.reasons))],maxGust:Math.max(...variants.map(v=>v.maxGust??-Infinity)),maxHeight:Math.max(...variants.map(v=>v.maxHeight??-Infinity)),minPeriod:Math.min(...variants.map(v=>v.minPeriod??Infinity)),variants:variants.map(({details,...v})=>v),details:h===0?variants[1].details:undefined});
+        windows.push({...variants[1],status:worst.status,reasons:[...new Set(variants.flatMap(v=>v.reasons))],maxGust:Math.max(...variants.map(v=>v.maxGust??-Infinity)),maxHeight:Math.max(...variants.map(v=>v.maxHeight??-Infinity)),minPeriod:Math.min(...variants.map(v=>v.minPeriod??Infinity)),variants:variants.map(({details,...v})=>v),details:variants[1].details});
       }
       // Check warnings across the route rather than only at the departure point.
       const checkPoints=samples.filter((_,i)=>i===0||i===samples.length-1||i%Math.max(1,Math.ceil(samples.length/6))===0);
