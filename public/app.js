@@ -83,7 +83,7 @@ preferencesForm.onsubmit=e=>{e.preventDefault();preferences={...Object.fromEntri
 function routeDistance(a,b){const r=n=>n*Math.PI/180;const x=Math.sin(r(b.lat-a.lat)/2)**2+Math.cos(r(a.lat))*Math.cos(r(b.lat))*Math.sin(r(b.lon-a.lon)/2)**2;return 3440.065*2*Math.atan2(Math.sqrt(x),Math.sqrt(Math.max(0,1-x)));}
 function totalDistance(){return routePoints.slice(1).reduce((s,p,i)=>s+routeDistance(routePoints[i],p),0);}
 function updateRouteOverview(){const nm=totalDistance(),speed=+form.elements.speed.value;$('#route-distance').innerHTML=routePoints.length>1?`${number(nm)} <small>nm</small>`:'—';$('#route-duration').textContent=nm&&speed?`${Math.floor(nm/speed)}h ${Math.round(nm/speed%1*60)}m`:'—';$('#route-count').textContent=routePoints.length;}
-function invalidateResults(){routeRevision++;passage=null;$('#passage-content').innerHTML='';$('#window-content').innerHTML='<div class="empty"><h3>Your route or preferences have changed.</h3><p>Check the updated passage to find fresh departure windows.</p></div>';}
+function invalidateResults(){removeInspectionMap();routeRevision++;passage=null;$('#passage-content').innerHTML='';$('#window-content').innerHTML='<div class="empty"><h3>Your route or preferences have changed.</h3><p>Check the updated passage to find fresh departure windows.</p></div>';}
 function snapshotRoute(){routeHistory.push(JSON.stringify(routePoints));if(routeHistory.length>30)routeHistory.shift();}
 function persistRoute(){save('boatbot-route-v2',routePoints);}
 function routeChanged(){ invalidateResults();renderRoute();persistRoute();status('#passage-status','');}
@@ -150,11 +150,12 @@ const restored=read('boatbot-route-v2');
 if(Array.isArray(restored))routePoints=restored.filter(p=>Number.isFinite(p.lat)&&Number.isFinite(p.lon)&&Math.abs(p.lat)<=90&&Math.abs(p.lon)<=180).slice(0,12);
 else if(oldPassage?.points){try{routePoints=oldPassage.points.split('\n').map(l=>{const [lat,lon]=l.split(',').map(Number);return{lat,lon,name:'Saved waypoint'};}).filter(p=>Number.isFinite(p.lat)&&Number.isFinite(p.lon));}catch{}}
 
-let passage=null;
-function renderWindows(){if(!passage)return;const d=passage,filter=$('#window-filter').value;const shown=d.windows.filter(w=>filter==='all'||filter===w.status);const fit=d.windows.find(w=>w.status==='fits');
+let passage=null,inspectionMap=null;
+function removeInspectionMap(){if(inspectionMap){inspectionMap.remove();inspectionMap=null;}}
+function renderWindows(){if(!passage)return;removeInspectionMap();const d=passage,filter=$('#window-filter').value;const shown=d.windows.filter(w=>filter==='all'||filter===w.status);const fit=d.windows.find(w=>w.status==='fits');
   // Consecutive hourly candidates are grouped, never interpreted as sub-hourly guarantees.
   const groups=[];for(const w of d.windows){if(w.status!=='fits')continue;const last=groups.at(-1);if(last&&w.departure===last.end+3600000)last.end=w.departure;else groups.push({start:w.departure,end:w.departure});}
-  $('#window-content').innerHTML=`<div class="window-summary"><h3>${fit?'First candidate fitting your preferences':'No complete fit in this scan'}</h3><p>${fit?`${time(fit.departure)} · arrives ${time(fit.arrival)}`:'Review marginal, incomplete, and excluded departures below.'}</p><p>${number(d.length)} nm · ${d.samples} route samples · speed checks ${d.speeds.map(s=>number(s)).join(' / ')} kn</p></div>${groups.length?`<p class="muted">Consecutive fitting hourly departures: ${groups.map(g=>`${time(g.start)}${g.end!==g.start?' – '+time(g.end):''}`).join('; ')}.</p>`:''}<p class="hint">72 hourly departure candidates. Ratings use the worst result across three speeds. Farther-ahead forecasts are less certain; no independent model agreement check is included. NWS warnings are displayed separately below.</p>${freshness(d)}${warnings(d.alerts)}${windowCards(d)}<div id="candidate-detail" aria-live="polite"></div>${table(['Departure / arrival','Assessment','Max gust · kn','Max waves · ft','Min mean period · s','Why'],shown.map(w=>`<tr><td>${time(w.departure)}<br><span class="hint">→ ${time(w.arrival)}</span></td><td>${badge(w.status)}</td><td>${number(w.maxGust)}</td><td>${number(w.maxHeight)}</td><td>${number(w.minPeriod)}</td><td>${esc(w.reasons.join('; ')||'Fits sampled numeric preferences')}</td></tr>`))}${!shown.length?'<p>No departures match this filter.</p>':''}`;
+  $('#window-content').innerHTML=`<div class="window-summary"><h3>${fit?'First candidate fitting your preferences':'No complete fit in this scan'}</h3><p>${fit?`${time(fit.departure)} · arrives ${time(fit.arrival)}`:'Review marginal, incomplete, and excluded departures below.'}</p><p>${number(d.length)} nm · ${d.samples} route samples · speed checks ${d.speeds.map(s=>number(s)).join(' / ')} kn</p></div>${groups.length?`<p class="muted">Consecutive fitting hourly departures: ${groups.map(g=>`${time(g.start)}${g.end!==g.start?' – '+time(g.end):''}`).join('; ')}.</p>`:''}<p class="hint">72 hourly departure candidates. Ratings use the worst result across three speeds. Farther-ahead forecasts are less certain; no independent model agreement check is included. NWS warnings are displayed separately below.</p>${freshness(d)}${warnings(d.alerts)}${windowCards(d)}<div id="candidate-detail" aria-live="polite"></div>${table(['Departure / arrival','Assessment','Max gust · kn','Max waves · ft','Min mean period · s','Why'],shown.map(w=>`<tr><td>${time(w.departure)}<br><span class="hint">→ ${time(w.arrival)}</span><br><button type="button" class="inspect-row text-button" data-candidate="${d.windows.indexOf(w)}">Inspect passage ↗</button></td><td>${badge(w.status)}</td><td>${number(w.maxGust)}</td><td>${number(w.maxHeight)}</td><td>${number(w.minPeriod)}</td><td>${esc(w.reasons.join('; ')||'Fits sampled numeric preferences')}</td></tr>`))}${!shown.length?'<p>No departures match this filter.</p>':''}`;
  document.querySelectorAll('[data-candidate]').forEach(b=>b.onclick=()=>showCandidate(+b.dataset.candidate));
 }
 function windowCards(d){
@@ -164,8 +165,28 @@ function windowCards(d){
  return choices.length?`<div class="candidate-cards">${choices.map(w=>`<article class="candidate-card">${badge(w.status)}<h3>${time(w.departure)}</h3><p>Arrive ${time(w.arrival)}</p><p>Gusts ${number(w.maxGust)} kn · waves ${number(w.maxHeight)} ft<br>Mean period ${number(w.minPeriod)} s</p><button type="button" class="secondary" data-candidate="${d.windows.indexOf(w)}">Inspect passage ↗</button></article>`).join('')}</div>`:'';
 }
 function showCandidate(index){
- const w=passage?.windows[index];if(!w)return;
- $('#candidate-detail').innerHTML=`<section class="route-detail"><h3>Along the passage · ${time(w.departure)}</h3><p class="hint">At planning speed ${number(w.speed)} kn. Overall rating also checks ±0.5 kn.</p>${table(['Expected time','Position','Gust · kn','Waves · ft','Mean period · s'],w.details.map(p=>`<tr><td>${time(p.time)}</td><td>${p.lat.toFixed(3)}, ${p.lon.toFixed(3)}</td><td>${number(p.gust)}</td><td>${number(p.height)}</td><td>${number(p.period)}</td></tr>`))}</section>`;
+ const w=passage?.windows[index];if(!w)return;removeInspectionMap();
+ $('#candidate-detail').innerHTML=`<section class="route-detail"><div class="section-heading"><div><p class="eyebrow">YOUR PASSAGE, ON THE MAP</p><h3>Along the passage · ${time(w.departure)}</h3></div><button type="button" id="close-inspection" class="secondary">Close inspection</button></div><p class="hint">Departure ${time(w.departure)} · arrival ${time(w.arrival)} · planning speed ${number(w.speed)} kn. Overall rating also checks ±0.5 kn.</p><div id="inspection-map" aria-label="Selected passage forecast route"></div><div class="map-legend"><span><i class="legend-dot fits-dot"></i>Fits preferences</span><span><i class="legend-dot marginal-dot"></i>Marginal waves</span><span><i class="legend-dot exceeds-dot"></i>Gust limit exceeded</span><span><i class="legend-dot missing-dot"></i>Missing data</span></div><p id="inspection-map-note" class="hint">Select a forecast point for its expected time and conditions. A is departure; B is arrival. General-purpose map, not a nautical chart. Colors reflect the displayed gust and wave values at planning speed; check the overall assessment and warnings separately.</p>${table(['Expected time','Position','Gust · kn','Waves · ft','Mean period · s'],w.details.map((p,i)=>`<tr><td><button type="button" class="text-button inspect-point" data-point="${i}">${time(p.time)} ↗</button></td><td>${p.lat.toFixed(3)}, ${p.lon.toFixed(3)}</td><td>${number(p.gust)}</td><td>${number(p.height)}</td><td>${number(p.period)}</td></tr>`))}</section>`;
+ $('#close-inspection').onclick=()=>{removeInspectionMap();$('#candidate-detail').innerHTML='';};
+ const points=w.details;
+ if(window.L&&points.length){
+  // Keep longitudes continuous across the date line for a compact route view.
+  const coords=points.map((p,i)=>{let lon=p.lon;if(i){const prev=points[i-1].lon;lon=prev+(((lon-prev+180)%360+360)%360-180);}return [p.lat,lon];});
+  for(let i=1;i<coords.length;i++){while(coords[i][1]-coords[i-1][1]>180)coords[i][1]-=360;while(coords[i][1]-coords[i-1][1]<-180)coords[i][1]+=360;}
+  inspectionMap=L.map('inspection-map',{scrollWheelZoom:false});
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(inspectionMap).on('tileerror',()=>{$('#inspection-map-note').textContent='Some background tiles are unavailable. Route points and forecast table remain available.';});
+  L.polyline(coords,{color:'#236d66',weight:4,opacity:.8}).addTo(inspectionMap);
+  const markers=points.map((p,i)=>{
+   const missing=[p.gust,p.height,p.period].some(v=>typeof v!=='number'||!Number.isFinite(v));
+   const color=missing?'#7a8994':p.gust>+preferences.gust?'#b34c36':p.height>=+preferences.height||p.period<=+preferences.period?'#bc8c28':'#39816a';
+   const label=i===0?'A · Departure':i===points.length-1?'B · Arrival':`Forecast point ${i+1}`;
+   const marker=L.circleMarker(coords[i],{radius:i===0||i===points.length-1?9:6,color:'#fff',weight:2,fillColor:color,fillOpacity:1}).addTo(inspectionMap);
+   marker.bindTooltip(label,{permanent:i===0||i===points.length-1,direction:i===0?'top':'bottom'});
+   marker.bindPopup(`<strong>${label}</strong><br>${esc(time(p.time))}<br>Gusts ${number(p.gust)} kn<br>Significant waves ${number(p.height)} ft<br>Mean period ${number(p.period)} s<br><small>${p.lat.toFixed(3)}, ${p.lon.toFixed(3)}</small>`);return marker;
+  });
+  inspectionMap.fitBounds(coords,{padding:[35,35],maxZoom:12});
+  document.querySelectorAll('.inspect-point').forEach(b=>b.onclick=()=>{const i=+b.dataset.point;inspectionMap.setView(coords[i],Math.max(inspectionMap.getZoom(),9));markers[i].openPopup();$('#inspection-map').scrollIntoView({behavior:'smooth',block:'center'});});
+ }else{$('#inspection-map').hidden=true;$('#inspection-map-note').textContent='Map unavailable. Forecast details are listed below.';}
  $('#candidate-detail').scrollIntoView({behavior:'smooth',block:'start'});
 }
 $('#window-filter').onchange=renderWindows;
