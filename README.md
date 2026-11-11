@@ -63,6 +63,6 @@ Recommended next work: verify live providers from Railway; add model comparison 
 
 The UI is vessel-neutral. Speed, vessel name, and weather preferences are edited in a dialog and stored per browser. Existing settings migrate from the first version. Fresh visitors select a location explicitly; saved locations are labeled.
 
-Search departure/destination place centers, then drag markers onto a chart-verified passage. Add waypoints by clicking the map; inserted points go on the segment with the least added distance. Undo, remove, fit, and manual coordinate editing are available. Review confirmation is reset after route edits. Weather windows show candidate cards and point-by-point conditions.
+Search departure/destination place centers, then drag markers onto a chart-verified passage. Add waypoints by clicking the map; inserted points go on the segment with the least added distance. Undo, remove, fit, and manual coordinate editing are available. Weather windows show candidate cards and point-by-point conditions.
 
 Maps use Leaflet 1.9.4 (BSD-2-Clause, license in installed package) and visible OpenStreetMap contributor attribution. Standard OSM tiles are loaded on demand with normal browser caching and referrer policy, without offline prefetching. This is a general-purpose map, not a nautical chart. Review OSM tile policy and weather API terms before larger-scale sharing.

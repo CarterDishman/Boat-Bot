@@ -60,7 +60,7 @@ function updateRouteOverview(){const nm=totalDistance(),speed=+form.elements.spe
 function invalidateResults(){routeRevision++;passage=null;$('#passage-content').innerHTML='';$('#window-content').innerHTML='<div class="empty"><h3>Your route or preferences have changed.</h3><p>Check the updated passage to find fresh departure windows.</p></div>';}
 function snapshotRoute(){routeHistory.push(JSON.stringify(routePoints));if(routeHistory.length>30)routeHistory.shift();}
 function persistRoute(){save('boatbot-route-v2',routePoints);}
-function routeChanged(){ $('#route-reviewed').checked=false;invalidateResults();renderRoute();persistRoute();status('#passage-status','');}
+function routeChanged(){ invalidateResults();renderRoute();persistRoute();status('#passage-status','');}
 function fitRoute(){if(!routeMap)return;routeMap.invalidateSize();if(routePoints.length>1)routeMap.fitBounds(routePoints.map(p=>[p.lat,p.lon]),{padding:[40,40],maxZoom:12});else if(routePoints[0])routeMap.setView([routePoints[0].lat,routePoints[0].lon],9);}
 function initMap(){
  if(routeMap)return;
@@ -145,7 +145,7 @@ function showCandidate(index){
 }
 $('#window-filter').onchange=renderWindows;
 form.onsubmit=async e=>{
-  e.preventDefault();const revision=routeRevision;const raw={...Object.fromEntries(new FormData(form)),gust:preferences.gust,height:preferences.height,period:preferences.period,name:routePoints.length>1?`${routePoints[0].name||'Departure'} → ${routePoints.at(-1).name||'Destination'}`:'Your passage'};if(departureMode==='next')raw.departure=dateInput(Math.ceil(Date.now()/3600000)*3600000);save('boatbot-passage',raw);$('#calculate').disabled=true;status('#passage-status','Checking hourly route samples and 72 departure times. This may take up to a minute…');$('#passage-content').innerHTML='';
+  e.preventDefault();const revision=routeRevision;const raw={...Object.fromEntries(new FormData(form)),gust:preferences.gust,height:preferences.height,period:preferences.period,name:routePoints.length>1?`${routePoints[0].name||'Departure'} → ${routePoints.at(-1).name||'Destination'}`:'Your passage'};raw.points=routePoints.map(p=>`${p.lat}, ${p.lon}`).join('\n');if(departureMode==='next')raw.departure=dateInput(Math.ceil(Date.now()/3600000)*3600000);save('boatbot-passage',raw);$('#calculate').disabled=true;status('#passage-status','Checking hourly route samples and 72 departure times. This may take up to a minute…');$('#passage-content').innerHTML='';
   try{
     if(routePoints.length<2)throw new Error('Choose both a departure and destination.');
     const points=raw.points.trim().split('\n').map(l=>{const parts=l.trim().split(',').map(s=>s.trim());if(parts.length!==2||parts.some(p=>p===''))throw new Error('Use latitude, longitude on each waypoint line.');return {lat:Number(parts[0]),lon:Number(parts[1])};});
