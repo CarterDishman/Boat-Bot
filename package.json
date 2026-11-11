@@ -1,0 +1,6 @@
+{
+  "name": "boat-bot", "version": "0.1.0", "private": true,
+  "description": "Personal cruising weather and passage window dashboard",
+  "type": "module", "engines": { "node": ">=22" },
+  "scripts": { "start": "node server.js", "test": "node --test", "check": "node --check server.js && node --check public/app.js && node --check lib/passage.js" }
+}
